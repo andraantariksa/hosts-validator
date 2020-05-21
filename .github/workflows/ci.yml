@@ -1,0 +1,122 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+jobs:
+  build:
+    name: Build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        build: [linux, macos, win-msvc]
+        include:
+          - build: linux
+            os: ubuntu-latest
+            rust: stable
+          - build: macos
+            os: macOS-latest
+            rust: stable
+          - build: win-msvc
+            os: windows-latest
+            rust: stable
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v1
+        with:
+          fetch-depth: 1
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          override: true
+          profile: minimal
+      - name: Build release
+        run: cargo build --release --verbose
+      
+      - name: Upload windows artefact
+        if: ${{ matrix.os == 'windows-latest' }}
+        uses: actions/upload-artifact@v1
+        with:
+          name: hosts-validator-windows
+          path: target/release/hosts-validator.exe
+      
+      - name: Upload macos artefact
+        if: ${{ matrix.os == 'macOS-latest' }}
+        uses: actions/upload-artifact@v1
+        with:
+          name: hosts-validator-macos
+          path: target/release/hosts-validator
+      
+      - name: Upload linux artefact
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        uses: actions/upload-artifact@v1
+        with:
+          name: hosts-validator-linux
+          path: target/release/hosts-validator
+
+  release:
+    name: Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create release directory
+        run: mkdir release/
+
+      - name: Download linux artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: hosts-validator-linux
+          path: .
+      - name: Zip linux artefact
+        uses: montudor/action-zip@v0.1.0
+        with:
+          args: zip release/hosts-validator-linux.zip hosts-validator
+      
+      - name: Download macos artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: hosts-validator-macos
+          path: .
+      - name: Zip macos artefact
+        uses: montudor/action-zip@v0.1.0
+        with:
+          args: zip release/hosts-validator-macos.zip hosts-validator
+      
+      - name: Download windows artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: hosts-validator-windows
+          path: .
+      - name: Zip linux artefact
+        uses: montudor/action-zip@v0.1.0
+        with:
+          args: zip release/hosts-validator-windows.zip hosts-validator.exe
+      
+      - name: Release artifact
+        uses: ncipollo/release-action@v1
+        with:
+          allowUpdates: true
+          tag: v0.1
+          artifacts: release/*
+          token: ${{ secrets.ACCESS_TOKEN }}
+
+  rustfmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v1
+        with:
+          fetch-depth: 1
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          profile: minimal
+          components: rustfmt
+      - name: Check formatting
+        run: |
+          cargo fmt -- --check
